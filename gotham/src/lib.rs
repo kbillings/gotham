@@ -50,10 +50,11 @@ pub mod state;
 pub mod test;
 mod os;
 
-pub use os::current::start_with_num_threads;
+pub use os::current::{spawn_with_num_threads, start_with_num_threads, start_with_core};
 
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 use handler::NewHandler;
+use std::sync::Arc;
 
 /// Starts a Gotham application, with the default number of threads (equal to the number of CPUs).
 ///
@@ -67,6 +68,19 @@ where
 {
     let threads = num_cpus::get();
     start_with_num_threads(addr, threads, new_handler)
+}
+
+/// Spawns  a Gotham application, with the default number of threads (equal to the number of CPUs)
+/// - 1
+pub fn spawn<NH, A>(addr: A, new_handler: NH) -> (SocketAddr, TcpListener, Arc<::hyper::server::Http>, Arc<NH>)
+where
+    NH: NewHandler + 'static,
+    A: ToSocketAddrs,
+{
+    let threads = num_cpus::get().saturating_sub(1);
+    let threads = if threads == 0 { 1 } else { threads };
+
+    spawn_with_num_threads(addr, threads, new_handler)
 }
 
 fn tcp_listener<A>(addr: A) -> (TcpListener, SocketAddr)

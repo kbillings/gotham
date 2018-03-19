@@ -39,14 +39,49 @@ where
     start_core(listener, &addr, &protocol, new_handler);
 }
 
-fn start_core<NH>(listener: TcpListener, addr: &SocketAddr, protocol: &Http, new_handler: Arc<NH>)
+/// Spawns a Gotham application, with the given number of threads and return handlers
+pub fn spawn_with_num_threads<NH, A>(addr: A, threads: usize, new_handler: NH) -> (SocketAddr, TcpListener, Arc<Http>, Arc<NH>)
+where
+    NH: NewHandler + 'static,
+    A: ToSocketAddrs,
+{
+    let (listener, addr) = ::tcp_listener(addr);
+
+    let protocol = Arc::new(Http::new());
+    let new_handler = Arc::new(new_handler);
+
+    info!(
+        target: "gotham::start",
+        " Gotham listening on http://{} with {} threads",
+        addr,
+        threads,
+    );
+
+    for _ in 0..threads {
+        let listener = listener.try_clone().expect("unable to clone TCP listener");
+        let protocol = protocol.clone();
+        let new_handler = new_handler.clone();
+        thread::spawn(move || start_core(listener, &addr, &protocol, new_handler));
+    }
+
+    (addr, listener, protocol, new_handler)
+}
+
+pub fn start_with_core<NH>(mut core: Core, listener: TcpListener, addr: &SocketAddr, protocol: &Http, new_handler: Arc<NH>)
 where
     NH: NewHandler + 'static,
 {
-    let mut core = Core::new().expect("unable to spawn tokio reactor");
     let handle = core.handle();
     core.run(serve(listener, addr, protocol, new_handler, &handle))
         .expect("unable to run reactor over listener");
+}
+
+pub fn start_core<NH>(listener: TcpListener, addr: &SocketAddr, protocol: &Http, new_handler: Arc<NH>)
+where
+    NH: NewHandler + 'static,
+{
+    let core = Core::new().expect("unable to spawn tokio reactor");
+    start_with_core(core, listener, addr, protocol, new_handler);
 }
 
 fn serve<'a, NH>(
